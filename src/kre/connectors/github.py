@@ -8,7 +8,7 @@ import httpx
 
 from kre.connectors.base import Connector
 from kre.models import KnowledgeDocument, Provenance
-from kre.processing import content_hash, normalize_text
+from kre.normalization import normalize_text
 
 
 class GitHubConnector(Connector):
@@ -95,13 +95,17 @@ class GitHubConnector(Connector):
 
         return KnowledgeDocument(
             title=path.stem.replace("-", " ").replace("_", " ").strip() or path.name,
-            content=normalized,
-            mime_type="text/markdown" if path.suffix.lower() in {".md", ".markdown"} else "text/plain",
+            content=normalized.text,
+            mime_type=(
+                "text/markdown"
+                if path.suffix.lower() in {".md", ".markdown"}
+                else "text/plain"
+            ),
             provenance=Provenance(
                 source_system="github",
                 source_uri=html_url,
                 connector=self.name,
-                content_hash=content_hash(normalized),
+                content_hash=normalized.content_hash,
                 source_version=payload.get("sha"),
                 attributes={
                     "repository": self.repository,
