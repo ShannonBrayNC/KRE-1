@@ -1,3 +1,4 @@
+from kre.search.contracts import hybrid_response
 from kre.search.hybrid import HybridSearchResult, HybridSearchService
 from kre.search.keyword import KeywordSearch, SearchResult
 from kre.search.retrieval import SemanticRetrievalResult, SemanticRetrievalService
@@ -19,4 +20,5 @@ __all__ = [
     "SemanticRetrievalResult",
     "SemanticRetrievalService",
     "SemanticSearchResult",
+    "hybrid_response",
 ]
