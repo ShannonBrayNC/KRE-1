@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from kre.connectors.github import GitHubConnector
-from kre.processing import content_hash
+from kre.normalization import normalize_text
 
 
 @pytest.mark.asyncio
@@ -61,12 +61,13 @@ async def test_github_connector_fetches_normalized_document_with_provenance() ->
     connector = GitHubConnector("Lantern/KRE", ref="release", client=client)
 
     document = await connector.fetch("docs/overview.md")
+    expected = normalize_text(source)
 
     assert document.title == "overview"
-    assert document.content == "# KRE\n\nGoverned knowledge.\n"
+    assert document.content == expected.text
     assert document.provenance.connector == "github"
     assert document.provenance.source_version == "abc123"
-    assert document.provenance.content_hash == content_hash(document.content)
+    assert document.provenance.content_hash == expected.content_hash
     assert document.provenance.attributes["repository"] == "Lantern/KRE"
     await client.aclose()
 
