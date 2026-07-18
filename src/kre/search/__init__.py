@@ -1,3 +1,16 @@
 from kre.search.keyword import KeywordSearch, SearchResult
+from kre.search.semantic import (
+    InMemorySemanticIndex,
+    SemanticIndex,
+    SemanticRecord,
+    SemanticSearchResult,
+)
 
-__all__ = ["KeywordSearch", "SearchResult"]
+__all__ = [
+    "InMemorySemanticIndex",
+    "KeywordSearch",
+    "SearchResult",
+    "SemanticIndex",
+    "SemanticRecord",
+    "SemanticSearchResult",
+]
