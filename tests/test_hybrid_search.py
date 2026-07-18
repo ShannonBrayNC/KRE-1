@@ -84,7 +84,7 @@ async def test_hybrid_search_rewards_results_present_in_both_rankings() -> None:
 
 
 @pytest.mark.asyncio
-async def test_hybrid_search_keeps_single-channel_candidates() -> None:
+async def test_hybrid_search_keeps_single_channel_candidates() -> None:
     service, _, second_chunk = await seed_hybrid_service()
 
     results = await service.search("operational synchronization", limit=2)
