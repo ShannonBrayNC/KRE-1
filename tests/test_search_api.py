@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from kre.api.search import router
-from kre.schemas import SearchHit, SearchMode, SearchRequest, SearchResponse
+from kre.schemas import SearchHit, SearchRequest, SearchResponse
 
 
 class StubSearchBackend:
