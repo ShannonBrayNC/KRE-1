@@ -1,3 +1,4 @@
+from kre.search.hybrid import HybridSearchResult, HybridSearchService
 from kre.search.keyword import KeywordSearch, SearchResult
 from kre.search.retrieval import SemanticRetrievalResult, SemanticRetrievalService
 from kre.search.semantic import (
@@ -8,6 +9,8 @@ from kre.search.semantic import (
 )
 
 __all__ = [
+    "HybridSearchResult",
+    "HybridSearchService",
     "InMemorySemanticIndex",
     "KeywordSearch",
     "SearchResult",
