@@ -5,8 +5,8 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from kre.api.search import router
 from kre.schemas import SearchHit, SearchRequest, SearchResponse
+from kre.search.api import router
 
 
 class StubSearchBackend:
