@@ -29,8 +29,10 @@ class SecurityTrimmer:
     """Fail-closed search-result authorization policy."""
 
     def is_allowed(self, hit: SearchHit, context: SearchAuthorizationContext) -> bool:
-        classification = hit.classification or Classification.RESTRICTED.value
-        rank = _CLASSIFICATION_RANK.get(classification)
+        if hit.classification is None:
+            return False
+
+        rank = _CLASSIFICATION_RANK.get(hit.classification)
         if rank is None or rank > _CLASSIFICATION_RANK[context.clearance]:
             return False
 
