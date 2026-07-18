@@ -6,7 +6,7 @@ from uuid import UUID
 
 from kre.storage.base import KnowledgeRepository
 
-_TOKEN = re.compile(r"[\w'-]+", re.UNICODE)
+_TOKEN = re.compile(r"\w+(?:['-]\w+)*", re.UNICODE)
 
 
 @dataclass(frozen=True, slots=True)
