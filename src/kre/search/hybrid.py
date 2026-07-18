@@ -28,6 +28,44 @@ class HybridSearchResult:
     security_labels: tuple[str, ...]
 
 
+@dataclass(slots=True)
+class _HybridCandidate:
+    document_id: UUID
+    chunk_id: UUID
+    document_title: str
+    sequence: int
+    text: str
+    score: float = 0.0
+    keyword_rank: int | None = None
+    semantic_rank: int | None = None
+    keyword_score: float | None = None
+    semantic_score: float | None = None
+    source_uri: str | None = None
+    source_system: str | None = None
+    source_version: str | None = None
+    classification: str | None = None
+    security_labels: tuple[str, ...] = ()
+
+    def result(self) -> HybridSearchResult:
+        return HybridSearchResult(
+            document_id=self.document_id,
+            chunk_id=self.chunk_id,
+            document_title=self.document_title,
+            sequence=self.sequence,
+            text=self.text,
+            score=self.score,
+            keyword_rank=self.keyword_rank,
+            semantic_rank=self.semantic_rank,
+            keyword_score=self.keyword_score,
+            semantic_score=self.semantic_score,
+            source_uri=self.source_uri,
+            source_system=self.source_system,
+            source_version=self.source_version,
+            classification=self.classification,
+            security_labels=self.security_labels,
+        )
+
+
 class HybridSearchService:
     """Fuse keyword and semantic retrieval with reciprocal-rank fusion."""
 
@@ -76,62 +114,44 @@ class HybridSearchService:
         keyword_results: list[SearchResult],
         semantic_results: list[SemanticRetrievalResult],
     ) -> list[HybridSearchResult]:
-        fused: dict[tuple[UUID, UUID], dict[str, object]] = {}
+        fused: dict[tuple[UUID, UUID], _HybridCandidate] = {}
 
         for rank, item in enumerate(keyword_results, start=1):
             key = (item.document_id, item.chunk_id)
-            fused[key] = {
-                "document_id": item.document_id,
-                "chunk_id": item.chunk_id,
-                "document_title": item.document_title,
-                "sequence": item.sequence,
-                "text": item.text,
-                "score": 1.0 / (self._rank_constant + rank),
-                "keyword_rank": rank,
-                "semantic_rank": None,
-                "keyword_score": item.score,
-                "semantic_score": None,
-                "source_uri": None,
-                "source_system": None,
-                "source_version": None,
-                "classification": None,
-                "security_labels": (),
-            }
+            fused[key] = _HybridCandidate(
+                document_id=item.document_id,
+                chunk_id=item.chunk_id,
+                document_title=item.document_title,
+                sequence=item.sequence,
+                text=item.text,
+                score=1.0 / (self._rank_constant + rank),
+                keyword_rank=rank,
+                keyword_score=item.score,
+            )
 
         for rank, item in enumerate(semantic_results, start=1):
             key = (item.document_id, item.chunk_id)
-            contribution = 1.0 / (self._rank_constant + rank)
-            current = fused.get(key)
-            if current is None:
-                current = {
-                    "document_id": item.document_id,
-                    "chunk_id": item.chunk_id,
-                    "document_title": item.document_title,
-                    "sequence": item.sequence,
-                    "text": item.text,
-                    "score": 0.0,
-                    "keyword_rank": None,
-                    "semantic_rank": None,
-                    "keyword_score": None,
-                    "semantic_score": None,
-                    "source_uri": None,
-                    "source_system": None,
-                    "source_version": None,
-                    "classification": None,
-                    "security_labels": (),
-                }
-                fused[key] = current
+            candidate = fused.get(key)
+            if candidate is None:
+                candidate = _HybridCandidate(
+                    document_id=item.document_id,
+                    chunk_id=item.chunk_id,
+                    document_title=item.document_title,
+                    sequence=item.sequence,
+                    text=item.text,
+                )
+                fused[key] = candidate
 
-            current["score"] = float(current["score"]) + contribution
-            current["semantic_rank"] = rank
-            current["semantic_score"] = item.score
-            current["source_uri"] = item.source_uri
-            current["source_system"] = item.source_system
-            current["source_version"] = item.source_version
-            current["classification"] = item.classification
-            current["security_labels"] = item.security_labels
+            candidate.score += 1.0 / (self._rank_constant + rank)
+            candidate.semantic_rank = rank
+            candidate.semantic_score = item.score
+            candidate.source_uri = item.source_uri
+            candidate.source_system = item.source_system
+            candidate.source_version = item.source_version
+            candidate.classification = item.classification
+            candidate.security_labels = item.security_labels
 
-        results = [HybridSearchResult(**values) for values in fused.values()]
+        results = [candidate.result() for candidate in fused.values()]
         results.sort(
             key=lambda item: (
                 -item.score,
