@@ -98,7 +98,8 @@ async def test_provider_rejects_non_finite_values() -> None:
         transport=httpx.MockTransport(
             lambda request: httpx.Response(
                 200,
-                json={"data": [{"index": 0, "embedding": [float("nan")]}]},
+                content=b'{"data":[{"index":0,"embedding":[NaN]}]}',
+                headers={"content-type": "application/json"},
             )
         )
     ) as client:
@@ -120,7 +121,10 @@ def test_provider_validates_configuration() -> None:
         )
     with pytest.raises(ValueError, match="api_key_header"):
         OpenAICompatibleEmbeddingProvider(
-            endpoint="https://api.test", api_key="secret", model="embed", dimensions=2,
+            endpoint="https://api.test",
+            api_key="secret",
+            model="embed",
+            dimensions=2,
             api_key_header=" ",
         )
     with pytest.raises(ValueError, match="dimensions"):
