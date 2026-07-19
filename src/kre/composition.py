@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Protocol
 
 from kre.application import SearchApplicationBackend
 from kre.config import KRESettings
@@ -26,7 +27,15 @@ from kre.storage import (
 from kre.storage.postgres import PostgresPool
 from kre.telemetry import InMemoryRetrievalTelemetry, TelemetrySearchBackend
 
-PostgresPoolFactory = Callable[[str], Awaitable[PostgresPool]]
+
+class ManagedPostgresPool(PostgresPool, Protocol):
+    """PostgreSQL pool owned by the application process."""
+
+    async def close(self) -> None: ...
+
+
+PostgresPoolFactory = Callable[[str], Awaitable[ManagedPostgresPool]]
+ResourceCloser = Callable[[], Awaitable[None]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +48,13 @@ class KREComponents:
     embeddings: EmbeddingProvider
     telemetry: InMemoryRetrievalTelemetry
     search_backend: TelemetrySearchBackend
+    resource_closer: ResourceCloser | None = None
+
+    async def close(self) -> None:
+        """Release process-owned resources exactly when a closer is configured."""
+
+        if self.resource_closer is not None:
+            await self.resource_closer()
 
 
 def build_components(settings: KRESettings) -> KREComponents:
@@ -72,7 +88,12 @@ async def build_components_async(
         schema=settings.postgres_schema,
         vector_dimensions=settings.embedding_dimensions,
     )
-    return _assemble(settings, repository=repository, semantic_index=semantic_index)
+    return _assemble(
+        settings,
+        repository=repository,
+        semantic_index=semantic_index,
+        resource_closer=pool.close,
+    )
 
 
 def _assemble(
@@ -80,6 +101,7 @@ def _assemble(
     *,
     repository: KnowledgeRepository,
     semantic_index: SemanticIndex,
+    resource_closer: ResourceCloser | None = None,
 ) -> KREComponents:
     embeddings = build_embedding_provider(settings)
     keyword = KeywordSearch(repository)
@@ -95,6 +117,7 @@ def _assemble(
         embeddings=embeddings,
         telemetry=telemetry,
         search_backend=backend,
+        resource_closer=resource_closer,
     )
 
 
