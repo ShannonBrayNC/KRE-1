@@ -118,5 +118,12 @@ class PostgresMigrationRunner:
                 raise RuntimeError(f"migration name mismatch for version {version}")
             if row["checksum"] != migration.checksum:
                 raise RuntimeError(f"migration checksum mismatch for version {version}")
+            if version in applied:
+                raise RuntimeError(f"database contains duplicate migration version: {version}")
             applied.add(version)
+
+        ordered_applied = sorted(applied)
+        expected = list(range(1, len(ordered_applied) + 1))
+        if ordered_applied != expected:
+            raise RuntimeError("database migration history must be a contiguous prefix")
         return applied
