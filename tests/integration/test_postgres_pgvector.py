@@ -5,12 +5,12 @@ from os import environ
 
 import pytest
 
-asyncpg = pytest.importorskip("asyncpg")
-
 from kre.embeddings import EmbeddingVector
 from kre.models import Classification, KnowledgeChunk, KnowledgeDocument, Provenance
 from kre.search import PgVectorSemanticIndex, SemanticRecord
 from kre.storage import PostgresKnowledgeRepository, PostgresSchemaConfig, render_postgres_schema
+
+asyncpg = pytest.importorskip("asyncpg")
 
 
 @pytest.mark.asyncio
