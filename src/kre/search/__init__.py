@@ -1,6 +1,7 @@
 from kre.search.contracts import hybrid_response
 from kre.search.hybrid import HybridSearchResult, HybridSearchService
 from kre.search.keyword import KeywordSearch, SearchResult
+from kre.search.pgvector import PgVectorSemanticIndex
 from kre.search.retrieval import SemanticRetrievalResult, SemanticRetrievalService
 from kre.search.semantic import (
     InMemorySemanticIndex,
@@ -14,6 +15,7 @@ __all__ = [
     "HybridSearchService",
     "InMemorySemanticIndex",
     "KeywordSearch",
+    "PgVectorSemanticIndex",
     "SearchResult",
     "SemanticIndex",
     "SemanticRecord",
