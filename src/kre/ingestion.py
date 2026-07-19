@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
-from kre.embeddings import EmbeddingProvider
+from kre.embeddings import EmbeddingProvider, EmbeddingVector
 from kre.models import KnowledgeChunk, KnowledgeDocument
 from kre.search import SemanticIndex, SemanticRecord
 from kre.storage import KnowledgeRepository
@@ -42,7 +42,7 @@ class KnowledgeIngestionService:
         document: KnowledgeDocument,
         chunks: Sequence[KnowledgeChunk],
     ) -> IngestionResult:
-        """Persist a document and atomically replace its semantic projection."""
+        """Persist a document and replace its semantic projection."""
 
         ordered = self._validate_chunks(document.id, chunks)
         vectors = await self._embed_chunks(ordered)
@@ -52,21 +52,16 @@ class KnowledgeIngestionService:
             await self._repository.upsert_document(document)
             await self._repository.replace_chunks(document.id, ordered)
             await self._semantic_index.replace_document(document.id, records)
-        except BaseException as primary:
+        except Exception:
             try:
                 await self._semantic_index.delete_document(document.id)
-            except BaseException as cleanup:
+            except Exception as cleanup:
                 raise IngestionConsistencyError(
                     f"ingestion failed and semantic cleanup failed for document {document.id}"
                 ) from cleanup
-            raise primary
+            raise
 
-        return IngestionResult(
-            document_id=document.id,
-            chunk_count=len(ordered),
-            embedding_model=self._embeddings.model,
-            embedding_dimensions=self._embeddings.dimensions,
-        )
+        return self._result(document.id, len(ordered))
 
     async def reindex(self, document_id: UUID) -> IngestionResult:
         """Rebuild semantic records for an existing canonical document."""
@@ -81,18 +76,21 @@ class KnowledgeIngestionService:
             document_id,
             self._records(document_id, ordered, vectors),
         )
-        return IngestionResult(
-            document_id=document_id,
-            chunk_count=len(ordered),
-            embedding_model=self._embeddings.model,
-            embedding_dimensions=self._embeddings.dimensions,
-        )
+        return self._result(document_id, len(ordered))
 
     async def delete(self, document_id: UUID) -> bool:
         """Delete semantic and canonical state without leaving stale vectors."""
 
         await self._semantic_index.delete_document(document_id)
         return await self._repository.delete_document(document_id)
+
+    def _result(self, document_id: UUID, chunk_count: int) -> IngestionResult:
+        return IngestionResult(
+            document_id=document_id,
+            chunk_count=chunk_count,
+            embedding_model=self._embeddings.model,
+            embedding_dimensions=self._embeddings.dimensions,
+        )
 
     @staticmethod
     def _validate_chunks(
@@ -113,7 +111,7 @@ class KnowledgeIngestionService:
     async def _embed_chunks(
         self,
         chunks: tuple[KnowledgeChunk, ...],
-    ):
+    ) -> tuple[EmbeddingVector, ...]:
         vectors = tuple(await self._embeddings.embed(tuple(chunk.text for chunk in chunks)))
         if len(vectors) != len(chunks):
             raise RuntimeError("embedding provider returned an unexpected vector count")
@@ -124,7 +122,11 @@ class KnowledgeIngestionService:
         return vectors
 
     @staticmethod
-    def _records(document_id, chunks, vectors):
+    def _records(
+        document_id: UUID,
+        chunks: tuple[KnowledgeChunk, ...],
+        vectors: tuple[EmbeddingVector, ...],
+    ) -> tuple[SemanticRecord, ...]:
         return tuple(
             SemanticRecord(
                 document_id=document_id,
