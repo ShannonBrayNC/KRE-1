@@ -90,6 +90,26 @@ async def test_runner_fails_closed_on_drift_or_unknown_versions() -> None:
         await PostgresMigrationRunner(FakePool(unknown), migrations=(migration,)).apply()
 
 
+@pytest.mark.asyncio
+async def test_runner_rejects_noncontiguous_database_history() -> None:
+    migrations = (
+        PostgresMigration(version=1, name="one", sql="SELECT 1;"),
+        PostgresMigration(version=2, name="two", sql="SELECT 2;"),
+    )
+    connection = FakeConnection(
+        rows=[
+            {
+                "version": 2,
+                "name": migrations[1].name,
+                "checksum": migrations[1].checksum,
+            }
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="contiguous prefix"):
+        await PostgresMigrationRunner(FakePool(connection), migrations=migrations).apply()
+
+
 def test_migration_plan_and_runner_validation() -> None:
     plan = initial_postgres_migrations(PostgresSchemaConfig(vector_dimensions=8))
     assert len(plan) == 1
