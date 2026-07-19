@@ -11,6 +11,7 @@ from kre.embeddings import (
     EmbeddingProvider,
     OpenAICompatibleEmbeddingProvider,
 )
+from kre.ingestion import KnowledgeIngestionService
 from kre.search import (
     HybridSearchService,
     InMemorySemanticIndex,
@@ -49,6 +50,7 @@ class KREComponents:
     repository: KnowledgeRepository
     semantic_index: SemanticIndex
     embeddings: EmbeddingProvider
+    ingestion: KnowledgeIngestionService
     telemetry: InMemoryRetrievalTelemetry
     search_backend: TelemetrySearchBackend
     resource_closer: ResourceCloser | None = None
@@ -126,6 +128,7 @@ def _assemble(
     resource_closer: ResourceCloser | None = None,
 ) -> KREComponents:
     embeddings = build_embedding_provider(settings)
+    ingestion = KnowledgeIngestionService(repository, semantic_index, embeddings)
     keyword = KeywordSearch(repository)
     semantic = SemanticRetrievalService(repository, semantic_index, embeddings)
     hybrid = HybridSearchService(keyword, semantic)
@@ -137,6 +140,7 @@ def _assemble(
         repository=repository,
         semantic_index=semantic_index,
         embeddings=embeddings,
+        ingestion=ingestion,
         telemetry=telemetry,
         search_backend=backend,
         resource_closer=resource_closer,
