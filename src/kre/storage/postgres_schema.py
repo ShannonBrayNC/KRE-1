@@ -50,8 +50,11 @@ CREATE TABLE IF NOT EXISTS {schema}.knowledge_documents (
     source_version text NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_knowledge_documents_source_hash
+CREATE INDEX IF NOT EXISTS ix_knowledge_documents_source_hash
     ON {schema}.knowledge_documents (source_system, content_hash);
+
+CREATE INDEX IF NOT EXISTS ix_knowledge_documents_source_identity
+    ON {schema}.knowledge_documents (source_system, source_uri, source_version);
 
 CREATE TABLE IF NOT EXISTS {schema}.knowledge_chunks (
     id uuid PRIMARY KEY,
@@ -70,16 +73,12 @@ CREATE INDEX IF NOT EXISTS ix_knowledge_chunks_document
 
 CREATE TABLE IF NOT EXISTS {schema}.semantic_embeddings (
     chunk_id uuid NOT NULL REFERENCES {schema}.knowledge_chunks(id) ON DELETE CASCADE,
-    document_id uuid NOT NULL REFERENCES {schema}.knowledge_documents(id) ON DELETE CASCADE,
     model text NOT NULL,
     dimensions integer NOT NULL CHECK (dimensions = {dimensions}),
     embedding vector({dimensions}) NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (chunk_id, model)
 );
-
-CREATE INDEX IF NOT EXISTS ix_semantic_embeddings_document
-    ON {schema}.semantic_embeddings (document_id);
 
 CREATE INDEX IF NOT EXISTS ix_semantic_embeddings_cosine_hnsw
     ON {schema}.semantic_embeddings
