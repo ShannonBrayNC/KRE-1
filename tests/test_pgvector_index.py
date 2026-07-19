@@ -15,6 +15,7 @@ class FakeConnection:
         self.executed: list[tuple[str, tuple[Any, ...]]] = []
         self.rows: list[dict[str, Any]] = []
         self.in_transaction = False
+        self.reject_chunk = False
 
     @asynccontextmanager
     async def transaction(self):
@@ -30,7 +31,7 @@ class FakeConnection:
             return "DELETE 2"
         if "INSERT INTO" in query:
             assert self.in_transaction
-            return "INSERT 0 1"
+            return "INSERT 0 0" if self.reject_chunk else "INSERT 0 1"
         raise AssertionError(query)
 
     async def fetch(self, query: str, *args: Any):
@@ -66,8 +67,25 @@ async def test_pgvector_replaces_document_transactionally() -> None:
     assert pool.connection.in_transaction is False
     assert len(pool.connection.executed) == 3
     assert "USING kre.knowledge_chunks" in pool.connection.executed[0][0]
-    assert pool.connection.executed[1][1][-1] == "[1,0]"
-    assert pool.connection.executed[2][1][-1] == "[0,1]"
+    assert "chunk.document_id = $5" in pool.connection.executed[1][0]
+    assert pool.connection.executed[1][1][-2:] == ("[1,0]", document_id)
+    assert pool.connection.executed[2][1][-2:] == ("[0,1]", document_id)
+
+
+@pytest.mark.asyncio
+async def test_pgvector_rejects_chunk_outside_document_transaction() -> None:
+    pool = FakePool()
+    pool.connection.reject_chunk = True
+    index = PgVectorSemanticIndex(pool, vector_dimensions=2)
+    document_id = uuid4()
+
+    with pytest.raises(KeyError, match="does not belong"):
+        await index.replace_document(
+            document_id,
+            [SemanticRecord(document_id, uuid4(), 0, vector(1.0, 0.0))],
+        )
+
+    assert pool.connection.in_transaction is False
 
 
 @pytest.mark.asyncio
@@ -112,6 +130,8 @@ async def test_pgvector_validates_dimensions_and_record_identity() -> None:
 
     with pytest.raises(ValueError, match="dimensions"):
         await index.search(vector(1.0))
+    with pytest.raises(ValueError, match="non-zero magnitude"):
+        await index.search(vector(0.0, 0.0))
     with pytest.raises(ValueError, match="target document"):
         await index.replace_document(
             document_id,
