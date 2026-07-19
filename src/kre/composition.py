@@ -111,7 +111,10 @@ async def build_components_async(
             resource_closer=pool.close,
         )
     except BaseException:
-        await pool.close()
+        try:
+            await pool.close()
+        except Exception:
+            pass
         raise
 
 
