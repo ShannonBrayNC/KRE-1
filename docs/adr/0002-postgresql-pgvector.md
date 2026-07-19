@@ -20,9 +20,13 @@ The initial physical model contains:
 
 - `knowledge_documents` for canonical documents, provenance, classification, labels, tags, and source timestamps.
 - `knowledge_chunks` for ordered document chunks and chunk metadata.
-- `semantic_embeddings` for model-qualified vectors linked to canonical chunks.
+- `semantic_embeddings` for model-qualified vectors linked directly to canonical chunks.
 
-Document deletion cascades to chunks and embeddings. Chunk replacement must execute transactionally so readers never observe a partially replaced document. Embeddings are unique per `(chunk_id, model)` and retain explicit model and dimension metadata.
+Document deletion cascades to chunks and then embeddings. Chunk replacement must execute transactionally so readers never observe a partially replaced document. Embeddings are unique per `(chunk_id, model)` and retain explicit model and dimension metadata.
+
+Content hashes support change detection and lookup, but are not document identity. Distinct source records may legitimately contain identical content, so `(source_system, content_hash)` is indexed but not unique. Source identity and idempotency decisions belong in connector and synchronization policy using provenance such as source URI and source version.
+
+The embedding table does not duplicate `document_id`; document ownership is derived through the canonical chunk foreign key. This prevents a vector row from claiming a document that differs from its chunk owner.
 
 Cosine distance is the default semantic operator. An HNSW index using `vector_cosine_ops` is the initial approximate-nearest-neighbor strategy. Exact search remains available for validation and small corpora.
 
