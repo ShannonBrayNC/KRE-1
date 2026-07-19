@@ -17,6 +17,7 @@ from kre.search import (
     SemanticRetrievalService,
 )
 from kre.storage import InMemoryKnowledgeRepository, KnowledgeRepository
+from kre.telemetry import InMemoryRetrievalTelemetry, TelemetrySearchBackend
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +28,8 @@ class KREComponents:
     repository: KnowledgeRepository
     semantic_index: SemanticIndex
     embeddings: EmbeddingProvider
-    search_backend: SearchApplicationBackend
+    telemetry: InMemoryRetrievalTelemetry
+    search_backend: TelemetrySearchBackend
 
 
 def build_components(settings: KRESettings) -> KREComponents:
@@ -39,12 +41,15 @@ def build_components(settings: KRESettings) -> KREComponents:
     keyword = KeywordSearch(repository)
     semantic = SemanticRetrievalService(repository, semantic_index, embeddings)
     hybrid = HybridSearchService(keyword, semantic)
-    backend = SearchApplicationBackend(repository, keyword, semantic, hybrid)
+    application_backend = SearchApplicationBackend(repository, keyword, semantic, hybrid)
+    telemetry = InMemoryRetrievalTelemetry()
+    backend = TelemetrySearchBackend(application_backend, telemetry)
     return KREComponents(
         settings=settings,
         repository=repository,
         semantic_index=semantic_index,
         embeddings=embeddings,
+        telemetry=telemetry,
         search_backend=backend,
     )
 
