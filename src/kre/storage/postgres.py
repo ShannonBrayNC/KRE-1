@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import AsyncContextManager, Mapping, Sequence
-from typing import Any, Protocol
+import json
+from collections.abc import Mapping, Sequence
+from typing import Any, AsyncContextManager, Protocol
 from uuid import UUID
 
 from kre.models import KnowledgeChunk, KnowledgeDocument, Provenance
@@ -38,8 +39,8 @@ class PostgresKnowledgeRepository(KnowledgeRepository):
             security_labels, tags, created_at, modified_at, provenance,
             ingested_at, content_hash, source_system, source_uri, source_version
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-            $13, $14, $15, $16, $17
+            $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11,
+            $12::jsonb, $13, $14, $15, $16, $17
         )
         ON CONFLICT (id) DO UPDATE SET
             title = EXCLUDED.title,
@@ -71,11 +72,11 @@ class PostgresKnowledgeRepository(KnowledgeRepository):
                 document.language,
                 document.owner,
                 document.classification.value,
-                list(document.security_labels),
-                list(document.tags),
+                json.dumps(list(document.security_labels)),
+                json.dumps(list(document.tags)),
                 document.created_at,
                 document.modified_at,
-                provenance,
+                json.dumps(provenance),
                 document.provenance.ingested_at,
                 document.provenance.content_hash,
                 document.provenance.source_system,
@@ -133,7 +134,7 @@ class PostgresKnowledgeRepository(KnowledgeRepository):
         insert_query = f"""
         INSERT INTO {self._schema}.knowledge_chunks (
             id, document_id, sequence, text, token_count, section, page, metadata
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
         """
         async with self._pool.acquire() as connection:
             async with connection.transaction():
@@ -150,7 +151,7 @@ class PostgresKnowledgeRepository(KnowledgeRepository):
                         chunk.token_count,
                         chunk.section,
                         chunk.page,
-                        dict(chunk.metadata),
+                        json.dumps(dict(chunk.metadata)),
                     )
         return [chunk.model_copy(deep=True) for chunk in ordered]
 
@@ -171,8 +172,15 @@ class PostgresKnowledgeRepository(KnowledgeRepository):
             raise RuntimeError(f"unexpected PostgreSQL command status: {status}") from exc
 
     @staticmethod
-    def _document(row: Mapping[str, Any]) -> KnowledgeDocument:
-        provenance_data = dict(row["provenance"])
+    def _json(value: Any, *, expected: type) -> Any:
+        parsed = json.loads(value) if isinstance(value, str) else value
+        if not isinstance(parsed, expected):
+            raise RuntimeError(f"PostgreSQL JSON value must decode to {expected.__name__}")
+        return parsed
+
+    @classmethod
+    def _document(cls, row: Mapping[str, Any]) -> KnowledgeDocument:
+        provenance_data = dict(cls._json(row["provenance"], expected=dict))
         provenance_data.update(
             {
                 "ingested_at": row["ingested_at"],
@@ -190,15 +198,15 @@ class PostgresKnowledgeRepository(KnowledgeRepository):
             language=row["language"],
             owner=row["owner"],
             classification=row["classification"],
-            security_labels=list(row["security_labels"]),
-            tags=list(row["tags"]),
+            security_labels=list(cls._json(row["security_labels"], expected=list)),
+            tags=list(cls._json(row["tags"], expected=list)),
             created_at=row["created_at"],
             modified_at=row["modified_at"],
             provenance=Provenance.model_validate(provenance_data),
         )
 
-    @staticmethod
-    def _chunk(row: Mapping[str, Any]) -> KnowledgeChunk:
+    @classmethod
+    def _chunk(cls, row: Mapping[str, Any]) -> KnowledgeChunk:
         return KnowledgeChunk(
             id=row["id"],
             document_id=row["document_id"],
@@ -207,5 +215,5 @@ class PostgresKnowledgeRepository(KnowledgeRepository):
             token_count=row["token_count"],
             section=row["section"],
             page=row["page"],
-            metadata=dict(row["metadata"]),
+            metadata=dict(cls._json(row["metadata"], expected=dict)),
         )
