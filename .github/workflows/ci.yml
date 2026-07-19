@@ -49,4 +49,4 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev,postgres]"
-      - run: pytest tests/integration/test_postgres_pgvector.py -v
+      - run: pytest tests/integration -v
