@@ -27,18 +27,25 @@ class FakeConnection:
 
 
 class FakePool:
+    def __init__(self) -> None:
+        self.closed = False
+
     @asynccontextmanager
     async def acquire(self):
         yield FakeConnection()
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 @pytest.mark.asyncio
 async def test_async_composition_builds_postgres_adapters() -> None:
     captured: list[str] = []
+    pool = FakePool()
 
-    async def pool_factory(dsn: str):
+    async def pool_factory(dsn: str) -> FakePool:
         captured.append(dsn)
-        return FakePool()
+        return pool
 
     settings = KRESettings(
         storage_provider="postgres",
@@ -55,6 +62,8 @@ async def test_async_composition_builds_postgres_adapters() -> None:
     assert captured == ["postgresql://kre@db/knowledge"]
     assert isinstance(components.repository, PostgresKnowledgeRepository)
     assert isinstance(components.semantic_index, PgVectorSemanticIndex)
+    await components.close()
+    assert pool.closed is True
 
 
 @pytest.mark.asyncio
@@ -63,6 +72,7 @@ async def test_async_composition_preserves_memory_default() -> None:
 
     assert components.settings.storage_provider == "memory"
     assert components.telemetry.snapshot() == ()
+    await components.close()
 
 
 def test_postgres_configuration_is_fail_closed() -> None:
