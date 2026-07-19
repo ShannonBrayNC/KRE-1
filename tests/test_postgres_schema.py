@@ -21,11 +21,16 @@ def test_postgres_schema_contains_canonical_and_vector_tables() -> None:
 def test_postgres_schema_enforces_lifecycle_and_identity_constraints() -> None:
     sql = render_postgres_schema(PostgresSchemaConfig())
 
-    assert sql.count("ON DELETE CASCADE") == 3
+    assert sql.count("ON DELETE CASCADE") == 2
     assert "UNIQUE (document_id, sequence)" in sql
     assert "PRIMARY KEY (chunk_id, model)" in sql
     assert "classification IN ('public', 'internal', 'confidential', 'restricted')" in sql
-    assert "source_system, content_hash" in sql
+    assert "ix_knowledge_documents_source_hash" in sql
+    assert "ix_knowledge_documents_source_identity" in sql
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS ux_knowledge_documents_source_hash" not in sql
+    assert "document_id uuid NOT NULL REFERENCES kre.knowledge_documents" not in sql.split(
+        "CREATE TABLE IF NOT EXISTS kre.semantic_embeddings", maxsplit=1
+    )[1]
 
 
 def test_postgres_schema_supports_governed_schema_names() -> None:
