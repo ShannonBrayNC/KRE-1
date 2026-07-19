@@ -1,0 +1,42 @@
+[
+  {
+    "name": "opshelm-ticket-analysis",
+    "query": "OpsHelm ticket log analysis",
+    "mode": "keyword",
+    "limit": 1,
+    "expected_document_ids": ["10000000-0000-0000-0000-000000000001"],
+    "forbidden_document_ids": ["10000000-0000-0000-0000-000000000002"]
+  },
+  {
+    "name": "ets-evidence-trace",
+    "query": "ETS evidence provenance trace",
+    "mode": "keyword",
+    "limit": 1,
+    "expected_document_ids": ["10000000-0000-0000-0000-000000000002"],
+    "forbidden_document_ids": ["10000000-0000-0000-0000-000000000001"]
+  },
+  {
+    "name": "signalforge-azure-deployment",
+    "query": "SignalForge Azure deployment wrapper",
+    "mode": "keyword",
+    "limit": 1,
+    "expected_document_ids": ["10000000-0000-0000-0000-000000000003"],
+    "forbidden_document_ids": ["10000000-0000-0000-0000-000000000005"]
+  },
+  {
+    "name": "echochamber-voice-translation",
+    "query": "EchoChamber voice translation",
+    "mode": "keyword",
+    "limit": 1,
+    "expected_document_ids": ["10000000-0000-0000-0000-000000000004"],
+    "forbidden_document_ids": ["10000000-0000-0000-0000-000000000005"]
+  },
+  {
+    "name": "christina-sprint-orchestration",
+    "query": "Christina sprint runner orchestration",
+    "mode": "keyword",
+    "limit": 1,
+    "expected_document_ids": ["10000000-0000-0000-0000-000000000005"],
+    "forbidden_document_ids": ["10000000-0000-0000-0000-000000000003"]
+  }
+]
