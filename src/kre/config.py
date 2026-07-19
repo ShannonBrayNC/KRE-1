@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from os import environ
 
+from kre.storage.postgres_schema import PostgresSchemaConfig
+
 
 @dataclass(frozen=True, slots=True)
 class KRESettings:
@@ -15,6 +17,9 @@ class KRESettings:
     embedding_dimensions: int = 16
     embedding_api_version: str | None = None
     embedding_api_key_header: str = "Authorization"
+    storage_provider: str = "memory"
+    postgres_dsn: str | None = None
+    postgres_schema: str = "kre"
 
     def __post_init__(self) -> None:
         provider = self.embedding_provider.casefold()
@@ -27,6 +32,18 @@ class KRESettings:
                 raise ValueError("embedding_endpoint is required for openai-compatible")
             if not self.embedding_api_key or not self.embedding_api_key.strip():
                 raise ValueError("embedding_api_key is required for openai-compatible")
+
+        storage = self.storage_provider.casefold()
+        if storage not in {"memory", "postgres"}:
+            raise ValueError("storage_provider must be memory or postgres")
+        PostgresSchemaConfig(
+            schema=self.postgres_schema,
+            vector_dimensions=self.embedding_dimensions,
+        )
+        if storage == "postgres" and (
+            not self.postgres_dsn or not self.postgres_dsn.strip()
+        ):
+            raise ValueError("postgres_dsn is required for postgres storage")
 
     @classmethod
     def from_env(cls) -> KRESettings:
@@ -48,4 +65,7 @@ class KRESettings:
             embedding_api_key_header=environ.get(
                 "KRE_EMBEDDING_API_KEY_HEADER", "Authorization"
             ),
+            storage_provider=environ.get("KRE_STORAGE_PROVIDER", "memory"),
+            postgres_dsn=environ.get("KRE_POSTGRES_DSN"),
+            postgres_schema=environ.get("KRE_POSTGRES_SCHEMA", "kre"),
         )
