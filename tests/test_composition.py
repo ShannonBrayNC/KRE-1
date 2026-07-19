@@ -6,7 +6,7 @@ import pytest
 from kre.api import create_app, get_components
 from kre.config import KRESettings
 from kre.embeddings import DeterministicEmbeddingProvider, OpenAICompatibleEmbeddingProvider
-from kre.models import KnowledgeChunk, KnowledgeDocument, Provenance
+from kre.models import Classification, KnowledgeChunk, KnowledgeDocument, Provenance
 
 
 def test_settings_validate_provider_requirements(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -48,6 +48,7 @@ async def test_configured_app_executes_security_trimmed_keyword_search() -> None
     document = KnowledgeDocument(
         title="Lantern Public Knowledge",
         content="",
+        classification=Classification.PUBLIC,
         provenance=Provenance(
             source_system="test",
             connector="test",
