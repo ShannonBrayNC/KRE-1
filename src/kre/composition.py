@@ -23,6 +23,9 @@ from kre.storage import (
     InMemoryKnowledgeRepository,
     KnowledgeRepository,
     PostgresKnowledgeRepository,
+    PostgresMigrationRunner,
+    PostgresSchemaConfig,
+    initial_postgres_migrations,
 )
 from kre.storage.postgres import PostgresPool
 from kre.telemetry import InMemoryRetrievalTelemetry, TelemetrySearchBackend
@@ -82,18 +85,34 @@ async def build_components_async(
         raise RuntimeError("postgres_pool_factory is required for postgres storage")
 
     pool = await postgres_pool_factory(settings.postgres_dsn or "")
-    repository = PostgresKnowledgeRepository(pool, schema=settings.postgres_schema)
-    semantic_index = PgVectorSemanticIndex(
-        pool,
-        schema=settings.postgres_schema,
-        vector_dimensions=settings.embedding_dimensions,
-    )
-    return _assemble(
-        settings,
-        repository=repository,
-        semantic_index=semantic_index,
-        resource_closer=pool.close,
-    )
+    try:
+        if settings.postgres_apply_migrations:
+            schema_config = PostgresSchemaConfig(
+                schema=settings.postgres_schema,
+                vector_dimensions=settings.embedding_dimensions,
+            )
+            runner = PostgresMigrationRunner(
+                pool,
+                schema=settings.postgres_schema,
+                migrations=initial_postgres_migrations(schema_config),
+            )
+            await runner.apply()
+
+        repository = PostgresKnowledgeRepository(pool, schema=settings.postgres_schema)
+        semantic_index = PgVectorSemanticIndex(
+            pool,
+            schema=settings.postgres_schema,
+            vector_dimensions=settings.embedding_dimensions,
+        )
+        return _assemble(
+            settings,
+            repository=repository,
+            semantic_index=semantic_index,
+            resource_closer=pool.close,
+        )
+    except BaseException:
+        await pool.close()
+        raise
 
 
 def _assemble(
