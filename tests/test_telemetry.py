@@ -7,7 +7,11 @@ import pytest
 from kre.composition import build_components
 from kre.config import KRESettings
 from kre.schemas import SearchHit, SearchMode, SearchRequest, SearchResponse
-from kre.telemetry import InMemoryRetrievalTelemetry, TelemetrySearchBackend
+from kre.telemetry import (
+    InMemoryRetrievalTelemetry,
+    RetrievalTelemetryEvent,
+    TelemetrySearchBackend,
+)
 
 
 class SuccessfulBackend:
@@ -32,6 +36,11 @@ class SuccessfulBackend:
 class FailingBackend:
     async def execute(self, request: SearchRequest) -> SearchResponse:
         raise RuntimeError("provider unavailable")
+
+
+class FailingSink:
+    async def record(self, event: RetrievalTelemetryEvent) -> None:
+        raise OSError("telemetry unavailable")
 
 
 class Clock:
@@ -90,6 +99,39 @@ async def test_telemetry_records_failure_and_reraises() -> None:
     assert event.error_type == "RuntimeError"
     assert event.returned_count == 0
     assert event.duration_ms == 1.25
+
+
+@pytest.mark.asyncio
+async def test_telemetry_sink_failure_does_not_change_search_outcome() -> None:
+    request = SearchRequest(query="health", mode=SearchMode.KEYWORD)
+    successful = TelemetrySearchBackend(
+        SuccessfulBackend(), FailingSink(), clock_ns=Clock(1, 2)
+    )
+    failing = TelemetrySearchBackend(FailingBackend(), FailingSink(), clock_ns=Clock(1, 2))
+
+    assert (await successful.execute(request)).count == 1
+    with pytest.raises(RuntimeError, match="provider unavailable"):
+        await failing.execute(request)
+
+
+@pytest.mark.asyncio
+async def test_in_memory_telemetry_retention_is_bounded() -> None:
+    sink = InMemoryRetrievalTelemetry(max_events=2)
+    for count in range(3):
+        await sink.record(
+            RetrievalTelemetryEvent(
+                mode=SearchMode.KEYWORD,
+                requested_limit=1,
+                candidate_limit=None,
+                returned_count=count,
+                duration_ms=0,
+                outcome="success",
+            )
+        )
+
+    assert [event.returned_count for event in sink.snapshot()] == [1, 2]
+    with pytest.raises(ValueError, match="max_events"):
+        InMemoryRetrievalTelemetry(max_events=0)
 
 
 @pytest.mark.asyncio
