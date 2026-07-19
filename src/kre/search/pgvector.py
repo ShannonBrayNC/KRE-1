@@ -43,7 +43,10 @@ class PgVectorSemanticIndex(SemanticIndex):
         insert_query = f"""
         INSERT INTO {self._schema}.semantic_embeddings (
             chunk_id, model, dimensions, embedding
-        ) VALUES ($1, $2, $3, $4::vector)
+        )
+        SELECT chunk.id, $2, $3, $4::vector
+        FROM {self._schema}.knowledge_chunks AS chunk
+        WHERE chunk.id = $1 AND chunk.document_id = $5
         ON CONFLICT (chunk_id, model) DO UPDATE SET
             dimensions = EXCLUDED.dimensions,
             embedding = EXCLUDED.embedding,
@@ -53,13 +56,18 @@ class PgVectorSemanticIndex(SemanticIndex):
             async with connection.transaction():
                 await connection.execute(delete_query, document_id)
                 for record in records:
-                    await connection.execute(
+                    status = await connection.execute(
                         insert_query,
                         record.chunk_id,
                         record.vector.model,
                         record.vector.dimensions,
                         self._vector_literal(record.vector),
+                        document_id,
                     )
+                    if self._affected(status) != 1:
+                        raise KeyError(
+                            f"chunk does not belong to document: {record.chunk_id}"
+                        )
 
     async def delete_document(self, document_id: UUID) -> bool:
         query = f"""
@@ -84,8 +92,7 @@ class PgVectorSemanticIndex(SemanticIndex):
             raise ValueError("minimum_score must be between -1 and 1")
         if query.dimensions != self._dimensions:
             raise ValueError("query dimensions do not match the configured pgvector index")
-        if any(not math.isfinite(value) for value in query.values):
-            raise ValueError("query vector values must be finite")
+        self._validate_vector(query, label="query")
 
         sql = f"""
         SELECT
@@ -136,12 +143,18 @@ class PgVectorSemanticIndex(SemanticIndex):
             raise ValueError("semantic records for a document must share model and dimensions")
         if dimensions and dimensions != {self._dimensions}:
             raise ValueError("semantic record dimensions do not match the configured pgvector index")
-        if any(
-            not math.isfinite(value)
-            for record in records
-            for value in record.vector.values
-        ):
-            raise ValueError("semantic record vector values must be finite")
+        for record in records:
+            self._validate_vector(record.vector, label="semantic record")
+
+    @staticmethod
+    def _validate_vector(vector: EmbeddingVector, *, label: str) -> None:
+        if not vector.model.strip():
+            raise ValueError(f"{label} model must not be empty")
+        if any(not math.isfinite(value) for value in vector.values):
+            raise ValueError(f"{label} vector values must be finite")
+        magnitude = math.sqrt(sum(value * value for value in vector.values))
+        if magnitude == 0.0:
+            raise ValueError(f"{label} vector must have non-zero magnitude for cosine search")
 
     @staticmethod
     def _vector_literal(vector: EmbeddingVector) -> str:
