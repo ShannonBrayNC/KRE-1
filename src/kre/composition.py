@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from kre.application import SearchApplicationBackend
@@ -13,11 +14,19 @@ from kre.search import (
     HybridSearchService,
     InMemorySemanticIndex,
     KeywordSearch,
+    PgVectorSemanticIndex,
     SemanticIndex,
     SemanticRetrievalService,
 )
-from kre.storage import InMemoryKnowledgeRepository, KnowledgeRepository
+from kre.storage import (
+    InMemoryKnowledgeRepository,
+    KnowledgeRepository,
+    PostgresKnowledgeRepository,
+)
+from kre.storage.postgres import PostgresPool
 from kre.telemetry import InMemoryRetrievalTelemetry, TelemetrySearchBackend
+
+PostgresPoolFactory = Callable[[str], Awaitable[PostgresPool]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,10 +42,45 @@ class KREComponents:
 
 
 def build_components(settings: KRESettings) -> KREComponents:
-    """Construct the default KRE dependency graph from validated settings."""
+    """Construct the synchronous in-memory dependency graph."""
 
-    repository = InMemoryKnowledgeRepository()
-    semantic_index = InMemorySemanticIndex()
+    if settings.storage_provider.casefold() != "memory":
+        raise RuntimeError("postgres storage requires build_components_async")
+    return _assemble(
+        settings,
+        repository=InMemoryKnowledgeRepository(),
+        semantic_index=InMemorySemanticIndex(),
+    )
+
+
+async def build_components_async(
+    settings: KRESettings,
+    *,
+    postgres_pool_factory: PostgresPoolFactory | None = None,
+) -> KREComponents:
+    """Construct memory or durable PostgreSQL components from validated settings."""
+
+    if settings.storage_provider.casefold() == "memory":
+        return build_components(settings)
+    if postgres_pool_factory is None:
+        raise RuntimeError("postgres_pool_factory is required for postgres storage")
+
+    pool = await postgres_pool_factory(settings.postgres_dsn or "")
+    repository = PostgresKnowledgeRepository(pool, schema=settings.postgres_schema)
+    semantic_index = PgVectorSemanticIndex(
+        pool,
+        schema=settings.postgres_schema,
+        vector_dimensions=settings.embedding_dimensions,
+    )
+    return _assemble(settings, repository=repository, semantic_index=semantic_index)
+
+
+def _assemble(
+    settings: KRESettings,
+    *,
+    repository: KnowledgeRepository,
+    semantic_index: SemanticIndex,
+) -> KREComponents:
     embeddings = build_embedding_provider(settings)
     keyword = KeywordSearch(repository)
     semantic = SemanticRetrievalService(repository, semantic_index, embeddings)
