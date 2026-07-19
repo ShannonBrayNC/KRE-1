@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from math import isfinite
 from typing import Any
 
 import httpx
@@ -31,17 +32,19 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
             raise ValueError("api_key must not be empty")
         if not model.strip():
             raise ValueError("model must not be empty")
+        if not api_key_header.strip():
+            raise ValueError("api_key_header must not be empty")
         if dimensions < 1:
             raise ValueError("dimensions must be at least 1")
         if timeout <= 0:
             raise ValueError("timeout must be greater than zero")
 
-        self.endpoint = endpoint.rstrip("/")
-        self.api_key = api_key
-        self.model = model
+        self.endpoint = endpoint.strip().rstrip("/")
+        self.api_key = api_key.strip()
+        self.model = model.strip()
         self.dimensions = dimensions
-        self.api_version = api_version
-        self.api_key_header = api_key_header
+        self.api_version = api_version.strip() if api_version else None
+        self.api_key_header = api_key_header.strip()
         self.timeout = timeout
         self._client = client
 
@@ -53,7 +56,11 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
 
         headers = self._headers()
         params = {"api-version": self.api_version} if self.api_version else None
-        payload: dict[str, Any] = {"input": list(texts), "model": self.model}
+        payload: dict[str, Any] = {
+            "input": list(texts),
+            "model": self.model,
+            "dimensions": self.dimensions,
+        }
         client = self._client or httpx.AsyncClient(timeout=self.timeout)
         owns_client = self._client is None
 
@@ -76,13 +83,16 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
         if not isinstance(body, dict) or not isinstance(body.get("data"), list):
             raise RuntimeError("embedding response must contain a data list")
 
-        ordered = sorted(body["data"], key=lambda item: item.get("index", -1))
+        data = body["data"]
+        if any(not isinstance(item, dict) for item in data):
+            raise RuntimeError("embedding response items must be objects")
+        ordered = sorted(data, key=lambda item: item.get("index", -1))
         if len(ordered) != expected:
             raise RuntimeError("embedding response cardinality does not match input")
 
         vectors: list[EmbeddingVector] = []
         for index, item in enumerate(ordered):
-            if not isinstance(item, dict) or item.get("index") != index:
+            if item.get("index") != index:
                 raise RuntimeError("embedding response indices must be contiguous and ordered")
             values = item.get("embedding")
             if not isinstance(values, list):
@@ -91,6 +101,8 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
                 vector_values = tuple(float(value) for value in values)
             except (TypeError, ValueError) as exc:
                 raise RuntimeError("embedding values must be numeric") from exc
+            if not all(isfinite(value) for value in vector_values):
+                raise RuntimeError("embedding values must be finite")
             vectors.append(
                 EmbeddingVector(
                     values=vector_values,
