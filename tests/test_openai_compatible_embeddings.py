@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
@@ -11,8 +13,12 @@ async def test_openai_provider_preserves_input_order_and_auth() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["Authorization"] == "Bearer secret"
         assert request.url.params.get("api-version") is None
-        payload = request.read().decode()
-        assert '"model":"text-embedding-3-small"' in payload
+        payload = json.loads(request.read().decode())
+        assert payload == {
+            "input": ["first", "second"],
+            "model": "text-embedding-3-small",
+            "dimensions": 2,
+        }
         return httpx.Response(
             200,
             json={
@@ -61,19 +67,20 @@ async def test_azure_provider_uses_api_key_header_and_version() -> None:
 
 @pytest.mark.asyncio
 async def test_provider_validates_inputs_and_response_shape() -> None:
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"data": [{"index": 0, "embedding": [1.0]}]},
+            )
+        )
+    )
     provider = OpenAICompatibleEmbeddingProvider(
         endpoint="https://api.test/embeddings",
         api_key="secret",
         model="embed",
         dimensions=2,
-        client=httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                lambda request: httpx.Response(
-                    200,
-                    json={"data": [{"index": 0, "embedding": [1.0]}]},
-                )
-            )
-        ),
+        client=client,
     )
     try:
         assert await provider.embed([]) == []
@@ -82,13 +89,39 @@ async def test_provider_validates_inputs_and_response_shape() -> None:
         with pytest.raises(ValueError, match="length"):
             await provider.embed(["knowledge"])
     finally:
-        await provider._client.aclose()  # type: ignore[union-attr]
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_provider_rejects_non_finite_values() -> None:
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"data": [{"index": 0, "embedding": [float("nan")]}]},
+            )
+        )
+    ) as client:
+        provider = OpenAICompatibleEmbeddingProvider(
+            endpoint="https://api.test/embeddings",
+            api_key="secret",
+            model="embed",
+            dimensions=1,
+            client=client,
+        )
+        with pytest.raises(RuntimeError, match="finite"):
+            await provider.embed(["knowledge"])
 
 
 def test_provider_validates_configuration() -> None:
     with pytest.raises(ValueError, match="endpoint"):
         OpenAICompatibleEmbeddingProvider(
             endpoint=" ", api_key="secret", model="embed", dimensions=2
+        )
+    with pytest.raises(ValueError, match="api_key_header"):
+        OpenAICompatibleEmbeddingProvider(
+            endpoint="https://api.test", api_key="secret", model="embed", dimensions=2,
+            api_key_header=" ",
         )
     with pytest.raises(ValueError, match="dimensions"):
         OpenAICompatibleEmbeddingProvider(
