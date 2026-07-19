@@ -46,20 +46,26 @@ class RetrievalTelemetrySink(Protocol):
 
 
 class InMemoryRetrievalTelemetry:
-    """Process-local telemetry sink for tests and local operations."""
+    """Bounded process-local telemetry sink for tests and local operations."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, max_events: int = 1_000) -> None:
+        if max_events < 1:
+            raise ValueError("max_events must be at least 1")
+        self._max_events = max_events
         self._events: list[RetrievalTelemetryEvent] = []
 
     async def record(self, event: RetrievalTelemetryEvent) -> None:
         self._events.append(event)
+        overflow = len(self._events) - self._max_events
+        if overflow > 0:
+            del self._events[:overflow]
 
     def snapshot(self) -> Sequence[RetrievalTelemetryEvent]:
         return tuple(self._events)
 
 
 class TelemetrySearchBackend:
-    """Decorate a search backend without recording query text or document identities."""
+    """Decorate search while ensuring telemetry cannot disrupt retrieval."""
 
     def __init__(
         self,
@@ -77,7 +83,7 @@ class TelemetrySearchBackend:
         try:
             response = await self._backend.execute(request)
         except Exception as exc:
-            await self._record(
+            await self._record_best_effort(
                 request,
                 started=started,
                 returned_count=0,
@@ -86,7 +92,7 @@ class TelemetrySearchBackend:
             )
             raise
 
-        await self._record(
+        await self._record_best_effort(
             request,
             started=started,
             returned_count=response.count,
@@ -95,7 +101,7 @@ class TelemetrySearchBackend:
         )
         return response
 
-    async def _record(
+    async def _record_best_effort(
         self,
         request: SearchRequest,
         *,
@@ -104,14 +110,18 @@ class TelemetrySearchBackend:
         outcome: str,
         error_type: str | None,
     ) -> None:
-        elapsed_ns = max(0, self._clock_ns() - started)
-        event = RetrievalTelemetryEvent(
-            mode=request.mode,
-            requested_limit=request.limit,
-            candidate_limit=request.candidate_limit,
-            returned_count=returned_count,
-            duration_ms=round(elapsed_ns / 1_000_000, 3),
-            outcome=outcome,
-            error_type=error_type,
-        )
-        await self._sink.record(event)
+        try:
+            elapsed_ns = max(0, self._clock_ns() - started)
+            event = RetrievalTelemetryEvent(
+                mode=request.mode,
+                requested_limit=request.limit,
+                candidate_limit=request.candidate_limit,
+                returned_count=returned_count,
+                duration_ms=round(elapsed_ns / 1_000_000, 3),
+                outcome=outcome,
+                error_type=error_type,
+            )
+            await self._sink.record(event)
+        except Exception:
+            # Observability must never alter search success or mask the original failure.
+            return
