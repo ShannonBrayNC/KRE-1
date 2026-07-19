@@ -6,6 +6,18 @@ from os import environ
 from kre.storage.postgres_schema import PostgresSchemaConfig
 
 
+def _environment_bool(name: str, default: bool) -> bool:
+    raw = environ.get(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().casefold()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean value")
+
+
 @dataclass(frozen=True, slots=True)
 class KRESettings:
     """Validated process configuration for the KRE composition root."""
@@ -20,6 +32,7 @@ class KRESettings:
     storage_provider: str = "memory"
     postgres_dsn: str | None = None
     postgres_schema: str = "kre"
+    postgres_apply_migrations: bool = False
 
     def __post_init__(self) -> None:
         provider = self.embedding_provider.casefold()
@@ -44,6 +57,8 @@ class KRESettings:
             not self.postgres_dsn or not self.postgres_dsn.strip()
         ):
             raise ValueError("postgres_dsn is required for postgres storage")
+        if not isinstance(self.postgres_apply_migrations, bool):
+            raise ValueError("postgres_apply_migrations must be a boolean")
 
     @classmethod
     def from_env(cls) -> KRESettings:
@@ -68,4 +83,7 @@ class KRESettings:
             storage_provider=environ.get("KRE_STORAGE_PROVIDER", "memory"),
             postgres_dsn=environ.get("KRE_POSTGRES_DSN"),
             postgres_schema=environ.get("KRE_POSTGRES_SCHEMA", "kre"),
+            postgres_apply_migrations=_environment_bool(
+                "KRE_POSTGRES_APPLY_MIGRATIONS", False
+            ),
         )
